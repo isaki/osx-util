@@ -1,0 +1,8 @@
+# Mac Files
+.DS_Store
+
+# Vim
+.*.sw[0-9a-zA-Z]
+
+# Other temp files
+*~

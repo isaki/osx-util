@@ -1,0 +1,50 @@
+#!/bin/bash
+
+# LICENSE: https://github.com/isaki-x/osx-util/blob/master/LICENSE
+
+#
+# Override environment
+#
+
+# This enables Mac keyring storage of our SSH key password for SSH based git
+# access.
+# SEE: https://wiki.eclipse.org/EGit/FAQ#Store_SSH_Key_Passphrase_in_Mac_Keyring
+export GIT_SSH="/usr/bin/ssh"
+
+#
+# Version Tracking
+#
+version="1.0.3"
+
+#
+# Argument Handling
+#
+extra=''
+if [[ -n "$1" ]]; then
+    extra=" --args $@"
+fi
+
+#
+# The thing we want to execute
+#
+if [[ -n "${ECLIPSE_INSTALL_ROOT}" ]]; then
+    eclipse="${ECLIPSE_INSTALL_ROOT}/Eclipse.app${extra}"
+else
+    eclipse="${HOME}/opt/eclipse/Eclipse.app${extra}"
+fi
+
+echo "Eclipse wrapper v${version}"
+
+# We should launch from our home dir, in case our PWD gets nuked, we don't
+# have to worry about Java/Eclipse dealing with that should it ever reference
+# PWD.
+
+echo "Setting working directory to '${HOME}'"
+cd "${HOME}" || exit $?
+
+echo "Launching: ${eclipse}"
+exec /usr/bin/open ${eclipse}
+
+exit $?
+
+# vim: set tabstop=4 shiftwidth=4 softtabstop=4 expandtab : #
