@@ -13,6 +13,7 @@ BEGIN {
 use Term::ANSIColor qw(:constants);
 use Getopt::Long qw(:config bundling auto_version);
 use IO::Pipe;
+use File::Basename qw(basename);
 
 # Constants
 use constant SQLITE_EXE => '/usr/bin/sqlite3';
@@ -25,6 +26,7 @@ use constant SW_VERS_FLAG => '-productVersion';
 # Globals
 our $VERSION = q(1.0.4);
 our @MACOS_MIN = qw(10 13);
+our @MACOS_ROOT_REQUIRED = qw(10 14);
 our $BOOL_POS = 2;
 our $FLAG_POS = 4;
 our $ASIZE = 5;
@@ -42,7 +44,11 @@ if ($help) {
 
 # Main
 
-check_os(@MACOS_MIN);
+check_os(@MACOS_MIN) or die basename($0), ' requires MacOS ', join('.', @MACOS_MIN), ' or newer';
+
+if ($< != 0 && check_os(@MACOS_ROOT_REQUIRED)) {
+    die basename($0), ' requires administrative access on MacOS ', join('.', @MACOS_ROOT_REQUIRED), ' and newer';
+}
 
 my $pipe = IO::Pipe->new();
 my $pid = undef;
@@ -228,6 +234,7 @@ sub check_os {
     my $pid = undef;
     my $pipe = IO::Pipe->new();
 
+    my $ret = 1;
     if ($pid = fork()) {
         $pipe->reader();
 
@@ -249,8 +256,8 @@ sub check_os {
         for (my $i = 0; $i < $vsize; ++$i) {
             my $rtmp = ($i < $rsize) ? $res[$i] : 0;
             if ($rtmp < $ver[$i]) {
-                my $vstring = join('.', @ver);
-                die 'MacOS ', $vstring, ' required (current os version is ', $raw, ')';
+                $ret = 0;
+                last;
             } elsif ($rtmp > $ver[$i]) {
                 last;
             }
@@ -269,7 +276,7 @@ sub check_os {
         die $!;
     }
 
-    return 1;
+    return $ret;
 }
 
 # vim: set tabstop=4 shiftwidth=4 softtabstop=4 expandtab : #
@@ -465,7 +472,7 @@ __END__
       same "printed page" as the copyright notice for easier
       identification within third-party archives.
 
-   Copyright 2016-2018 isaki (isaki-x@github)
+   Copyright 2016-2018 isaki (isaki@github)
 
    Licensed under the Apache License, Version 2.0 (the "License");
    you may not use this file except in compliance with the License.
