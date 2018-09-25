@@ -63,7 +63,7 @@ Please note that during execution you may see warnings about files not existing;
 
 ## kextpolicy
 
-The current version of this utility is v1.0.4.
+The current version of this utility is v1.1.0
 
 This application dumps the contents of our security policy for kernel extensions (i.e. what extensions are installed and have been allowed and which have not). This script is for MacOS High Seirra (10.13) and newer.
 
@@ -91,6 +91,10 @@ This script will produce output as follows:
     YYYYYYYYYY | com.isaki.kext.malware |       F | Not-Isaki-X    |     1
 
 Note that 't' for allowed will be green and 'F' for disallowed will be red when colorization is enabled.
+
+Please also note that as of MacOS Mojave (10.14) this script must be executed as root (you can use sudo). For example:
+
+    sudo ~/git/osx-util/bin/kextpolicy
 
 - - -
 
