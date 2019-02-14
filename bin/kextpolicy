@@ -24,7 +24,7 @@ use constant SW_VERS_EXE => '/usr/bin/sw_vers';
 use constant SW_VERS_FLAG => '-productVersion';
 
 # Globals
-our $VERSION = q(1.1.0);
+our $VERSION = q(1.1.1);
 our @MACOS_MIN = qw(10 13);
 our @MACOS_ROOT_REQUIRED = qw(10 14);
 our $BOOL_POS = 2;
@@ -201,7 +201,7 @@ sub align_flags {
 }
 
 sub usage {
-    (my $scriptname = $0) =~ s!.*/!!;
+    my $scriptname = basename($0);
 
     my $vstring = join('.', @MACOS_MIN);
 

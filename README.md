@@ -63,7 +63,7 @@ Please note that during execution you may see warnings about files not existing;
 
 ## kextpolicy
 
-The current version of this utility is v1.1.0
+The current version of this utility is v1.1.1
 
 This application dumps the contents of our security policy for kernel extensions (i.e. what extensions are installed and have been allowed and which have not). This script is for MacOS High Seirra (10.13) and newer.
 
