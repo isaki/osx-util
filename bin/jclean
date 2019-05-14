@@ -16,7 +16,7 @@ use Getopt::Long qw(:config bundling auto_version);
 use File::Glob qw();
 
 # Globals
-our $VERSION = q(1.1.1);
+our $VERSION = q(1.2.0);
 
 # Option parsing
 my ($exec, $help, $verbose, $nv);
@@ -48,7 +48,7 @@ my @java = (
         '/Library/LaunchDaemons/com.oracle.java.Helper-Tool.plist'
     ])},
     @{check_glob([
-        '/Library/Java/JavaVirtualMachines/jdk*.jdk'
+        '/Library/Java/JavaVirtualMachines/*.jdk',
     ])}
 );
 

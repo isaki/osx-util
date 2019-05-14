@@ -12,7 +12,7 @@ This repository stores useful scripts for use on OS X.
 
 ## jclean
 
-The current version of this utility is v1.1.1.
+The current version of this utility is v1.2.0.
 
 The jclean application is the ultimate Java removal tool for Java 8 for OS X. The actions taken by this script are an amalgamation of the incorrect Oracle Java removal documentation (they are missing things), several stack overflow questions and answers, and the testing and experimentation of isaki-x (thank goodness for Time Machine).
 
@@ -42,7 +42,7 @@ In order to work properly, this script needs to run as root (you should execute 
             are seeing strange escaped sequences and no colors in your terminal
             when utilizing this utility, you should set this environment
             variable to clean up your output.
-       
+
 
 You can run this safely as your normal login user to see what the script would do:
 
@@ -58,6 +58,8 @@ You can run this safely as your normal login user to see what the script would d
     Please re-run this process with --exec as root if this is ok!
 
 Please note that during execution you may see warnings about files not existing; this was fixed in version 1.0.5 of jclean and you need to update to the latest version.
+
+As of jclean 1.2.0, jclean supports removing other JDKs such as Corretto.
 
 - - -
 
