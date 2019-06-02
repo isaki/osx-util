@@ -16,7 +16,7 @@ use Getopt::Long qw(:config bundling auto_version);
 use File::Glob qw();
 
 # Globals
-our $VERSION = q(1.2.0);
+our $VERSION = q(1.2.1);
 
 # Option parsing
 my ($exec, $help, $verbose, $nv);
@@ -71,7 +71,7 @@ if ($exec) {
                 error => \$err,
                 keep_root => 0
             });
-        
+
             $errCount += fp_error($err);
         } elsif (-l $path || -e $path) {
             print STDOUT 'Unlinking: ', $path, "\n";
@@ -82,11 +82,11 @@ if ($exec) {
             }
         } else {
             print STDOUT BRIGHT_YELLOW, q('), $path, q('), ' does not exist, skipping', RESET, "\n";
-        }  
-    } 
+        }
+    }
 } else {
     print STDOUT "\n",
-        BRIGHT_MAGENTA, 'Please re-run this process with ', RESET, 
+        BRIGHT_MAGENTA, 'Please re-run this process with ', RESET,
         BRIGHT_GREEN, '--exec', RESET,
         BRIGHT_MAGENTA, ' as ', RESET,
         BRIGHT_RED, 'root', RESET,
@@ -139,7 +139,7 @@ sub check_glob {
             print STDOUT BRIGHT_GREEN, $count, ' found', RESET, "\n";
 
             print STDOUT ' - Found: ', BRIGHT_BLUE, $_, RESET, "\n" foreach (@tmp);
-            
+
             push(@ret, @tmp);
         }
     }
@@ -163,13 +163,13 @@ sub fp_error {
 
         ++$errors;
     }
-    
+
     return $errors;
 }
-    
+
 sub verify {
     print STDERR BRIGHT_MAGENTA, '*** Please terminate all running browsers and Java based apps ***', RESET, "\n\n";
-    
+
     my $bool = undef;
     until (defined $bool) {
         # Write the STDERR in case STDOUT redirected.
@@ -192,15 +192,15 @@ sub verify {
             $bool = 0;
         }
     }
-    
+
     return $bool;
 }
 
 sub usage {
     (my $scriptname = $0) =~ s!.*/!!;
-    
+
     print STDOUT <<_USAGE_END_;
-    
+
 Usage: ${scriptname}
 
     h|help             : Display this screen.
@@ -225,7 +225,7 @@ Environment Settings:
         are seeing strange escaped sequences and no colors in your terminal
         when utilizing this utility, you should set this environment
         variable to clean up your output.
-   
+
 _USAGE_END_
 
     # void method

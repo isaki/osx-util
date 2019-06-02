@@ -16,15 +16,24 @@ use IO::Pipe;
 use File::Basename qw(basename);
 
 # Constants
+
+# SQL Lite Settings
 use constant SQLITE_EXE => '/usr/bin/sqlite3';
 use constant DB_PATH => '/private/var/db/SystemPolicyConfiguration/KextPolicy';
-use constant SQL => '.dump kext_policy';
+
+# Display Constants
+use constant DISPLAY_SQL => '.dump kext_policy';
 use constant COLUMN_JOIN => '|';
+
+# Mac Version Constants
 use constant SW_VERS_EXE => '/usr/bin/sw_vers';
 use constant SW_VERS_FLAG => '-productVersion';
 
+# Policy Removal constants
+use constant RM_SQL_TEMPLATE => q(DELETE FROM kext_policy WHERE bundle_id = '%s';);
+
 # Globals
-our $VERSION = q(1.1.1);
+our $VERSION = q(1.2.0);
 our @MACOS_MIN = qw(10 13);
 our @MACOS_ROOT_REQUIRED = qw(10 14);
 our $BOOL_POS = 2;
@@ -32,9 +41,10 @@ our $FLAG_POS = 4;
 our $ASIZE = 5;
 
 # Usage
-my ($help);
+my ($help, $remove);
 GetOptions(
-    'h|help' => \$help
+    'h|help' => \$help,
+    'r|remove=s' => \$remove
 ) or die 'invalid usage; run with --help';
 
 if ($help) {
@@ -42,135 +52,26 @@ if ($help) {
     exit(0);
 }
 
+die 'Invalid bundle id passed to --remove' if (defined $remove && $remove !~ /^[A-Za-z0-9.-_]+$/);
+
 # Main
 
-check_os(@MACOS_MIN) or die basename($0), ' requires MacOS ', join('.', @MACOS_MIN), ' or newer';
+check_os(@MACOS_MIN) or die basename($0), ' requires macOS ', join('.', @MACOS_MIN), ' or newer';
 
-if ($< != 0 && check_os(@MACOS_ROOT_REQUIRED)) {
-    die basename($0), ' requires administrative access on MacOS ', join('.', @MACOS_ROOT_REQUIRED), ' and newer';
+if ($< != 0) {
+    if (check_os(@MACOS_ROOT_REQUIRED)) {
+        die basename($0), ' requires administrative access on macOS ', join('.', @MACOS_ROOT_REQUIRED), ' and newer';
+    } elsif (defiend $remove) {
+        die basename($0), ' requires administrative access on macOS to remove entries from KextPolicy';
+    }
 }
 
-my $pipe = IO::Pipe->new();
-my $pid = undef;
-my $rc = 0;
-
-my @keys;
-my @values = ();
-my @lengths = ();
-
-if ($pid = fork()) {
-    $pipe->reader();
-
-    # Read and print the data.
-    while (my $line = $pipe->getline()) {
-        if ($line =~ /^INSERT INTO \S+ VALUES\((.+?)\);\s*$/o) {
-            my $raw = $1;
-            my @v = split(',', $raw);
-
-            my $vsize = scalar(@v);
-            my $diff = $vsize - $ASIZE;
-            if ($diff > 0) {
-                # This means we most likely ran into a vendor with a comma in
-                # the name.
-                my @buffer = ();
-
-                # We know the dn is the second to last value
-                my $dnpos = $ASIZE - 2;
-                my @removed = splice(@v, $dnpos + 1, $diff);
-                $v[$dnpos] = join(',', $v[$dnpos], @removed);
-            } elsif ($diff < 0) {
-                die 'Column count ', $vsize,
-                    ' found where ', $ASIZE,
-                    ' expected for line: ', $line;
-            }
-
-            for (my $i = 0; $i < $ASIZE; ++$i) {
-                $v[$i] =~ s/^'(.*)'$/$1/o;
-                my $x = length($v[$i]);
-                if ($x > $lengths[$i]) {
-                    $lengths[$i] = $x;
-                }
-            }
-
-            # All manipulations are done.
-            push(@values, \@v);
-        } elsif ($line =~ /^CREATE TABLE \S+\s*\(\s*(.+?),\s+PRIMARY/o) {
-            my $raw = $1;
-            @keys = map { (split(/\s+/, $_))[0] } split(/,\s*/, $raw);
-            @lengths = map { length($_) } @keys;
-            if (scalar(@keys) != $ASIZE) {
-                die 'Column count ', scalar(@keys),
-                    ' found where ', $ASIZE,
-                    ' expected for line: ', $line;
-            }
-        }
-    }
-
-    $pipe->close() or warn 'Failed to close pipe: ', $!;
-
-    waitpid($pid, 0);
-
-    $rc = $? >> 8;
-} elsif (defined $pid) {
-    $pipe->writer();
-
-    STDOUT->close();
-    open(STDOUT, '>&', $pipe);
-    STDOUT->autoflush(1);
-
-    my @cmd = (SQLITE_EXE, DB_PATH, SQL);
-    exec(@cmd);
-    exit($!);
+my $rc;
+if (defined $remove) {
+    $rc = remove_id($remove);
 } else {
-    die $!;
-}
-
-if ($rc == 0) {
-    # Print the pretty table
-
-    for (my $i = 0; $i < $ASIZE; ++$i) {
-        if ($i > 0) {
-            print STDOUT ' ', COLUMN_JOIN, ' ';
-        }
-
-        print STDOUT BRIGHT_MAGENTA, align($lengths[$i], $keys[$i]), RESET;
-    }
-
-    print STDOUT "\n";
-
-    for (my $i = 0; $i < $ASIZE; ++$i) {
-        if ($i > 0) {
-            print STDOUT '-', COLUMN_JOIN, '-';
-        }
-
-        print STDOUT '-' x $lengths[$i];
-    }
-
-    print STDOUT "\n";
-
-    foreach my $v (@values) {
-        for (my $i = 0; $i < $ASIZE; ++$i) {
-            if ($i > 0) {
-                print STDOUT ' ', COLUMN_JOIN, ' ';
-            }
-
-            if ($i == $BOOL_POS) {
-                if ($v->[$i]) {
-                    print STDOUT BRIGHT_GREEN;
-                } else {
-                    print STDOUT BRIGHT_RED;
-                }
-
-                print STDOUT align_boolean($lengths[$i], $v->[$i]), RESET;
-            } elsif ($i == $FLAG_POS) {
-                print STDOUT BRIGHT_YELLOW, align_flags($lengths[$i], $v->[$i]), RESET;
-            } else {
-                print STDOUT BRIGHT_BLUE, align($lengths[$i], $v->[$i]), RESET;
-            }
-        }
-
-        print STDOUT "\n";
-    }
+    # Display mode
+    $rc = dump_kext_policy();
 }
 
 exit($rc);
@@ -209,8 +110,11 @@ sub usage {
 
 Usage: ${scriptname}
 
-    h|help             : Display this screen.
-    version            : Display version information.
+    h|help               : Display this screen.
+    version              : Display version information.
+    r|remove <bundle_id> : Remove the specified entry with the given bundle_id;
+                           this requires that either SIP be disabled or that
+                           this process be executed in Recovery Mode.
 
 Environment Settings:
 
@@ -277,6 +181,158 @@ sub check_os {
     }
 
     return $ret;
+}
+
+sub remove_id {
+    my ($id) = @_;
+
+    print STDOUT BRIGHT_YELLOW 'WARN: **** WARNING ****', RESET, "\n";
+    print STDOUT BRIGHT_YELLOW 'WARN: If SIP is enabled OR this is not recovery mode, this will fail.', RESET, "\n";
+
+    my $sql = sprintf(RM_SQL_TEMPLATE, $id);
+
+    my $rc = 0;
+    my $pid = undef;
+
+    if ($pid = fork()) {
+        waitpid($pid, 0);
+        $rc = $? >> 8;
+    } elsif (defined $pid) {
+        my @cmd = (SQLITE_EXE, DB_PATH, $sql);
+        exec(@cmd);
+        exit($!);
+    } else {
+        die $!;
+    }
+
+    return $rc;
+}
+
+sub dump_kext_policy {
+    my $pipe = IO::Pipe->new();
+    my $pid = undef;
+    my $rc = 0;
+
+    my @keys;
+    my @values = ();
+    my @lengths = ();
+
+    if ($pid = fork()) {
+        $pipe->reader();
+
+        # Read and print the data.
+        while (my $line = $pipe->getline()) {
+            if ($line =~ /^INSERT INTO \S+ VALUES\((.+?)\);\s*$/o) {
+                my $raw = $1;
+                my @v = split(',', $raw);
+
+                my $vsize = scalar(@v);
+                my $diff = $vsize - $ASIZE;
+                if ($diff > 0) {
+                    # This means we most likely ran into a vendor with a comma in
+                    # the name.
+                    my @buffer = ();
+
+                    # We know the dn is the second to last value
+                    my $dnpos = $ASIZE - 2;
+                    my @removed = splice(@v, $dnpos + 1, $diff);
+                    $v[$dnpos] = join(',', $v[$dnpos], @removed);
+                } elsif ($diff < 0) {
+                    die 'Column count ', $vsize,
+                        ' found where ', $ASIZE,
+                        ' expected for line: ', $line;
+                }
+
+                for (my $i = 0; $i < $ASIZE; ++$i) {
+                    $v[$i] =~ s/^'(.*)'$/$1/o;
+                    my $x = length($v[$i]);
+                    if ($x > $lengths[$i]) {
+                        $lengths[$i] = $x;
+                    }
+                }
+
+                # All manipulations are done.
+                push(@values, \@v);
+            } elsif ($line =~ /^CREATE TABLE \S+\s*\(\s*(.+?),\s+PRIMARY/o) {
+                my $raw = $1;
+                @keys = map { (split(/\s+/, $_))[0] } split(/,\s*/, $raw);
+                @lengths = map { length($_) } @keys;
+                if (scalar(@keys) != $ASIZE) {
+                    die 'Column count ', scalar(@keys),
+                        ' found where ', $ASIZE,
+                        ' expected for line: ', $line;
+                }
+            }
+        }
+
+        $pipe->close() or warn 'Failed to close pipe: ', $!;
+
+        waitpid($pid, 0);
+
+        $rc = $? >> 8;
+    } elsif (defined $pid) {
+        $pipe->writer();
+
+        STDOUT->close();
+        open(STDOUT, '>&', $pipe);
+        STDOUT->autoflush(1);
+
+        my @cmd = (SQLITE_EXE, DB_PATH, DISPLAY_SQL);
+        exec(@cmd);
+        exit($!);
+    } else {
+        die $!;
+    }
+
+    if ($rc == 0) {
+        # Print the pretty table
+
+        for (my $i = 0; $i < $ASIZE; ++$i) {
+            if ($i > 0) {
+                print STDOUT ' ', COLUMN_JOIN, ' ';
+            }
+
+            print STDOUT BRIGHT_MAGENTA, align($lengths[$i], $keys[$i]), RESET;
+        }
+
+        print STDOUT "\n";
+
+        for (my $i = 0; $i < $ASIZE; ++$i) {
+            if ($i > 0) {
+                print STDOUT '-', COLUMN_JOIN, '-';
+            }
+
+            print STDOUT '-' x $lengths[$i];
+        }
+
+        print STDOUT "\n";
+
+        foreach my $v (@values) {
+            for (my $i = 0; $i < $ASIZE; ++$i) {
+                if ($i > 0) {
+                    print STDOUT ' ', COLUMN_JOIN, ' ';
+                }
+
+                if ($i == $BOOL_POS) {
+                    if ($v->[$i]) {
+                        print STDOUT BRIGHT_GREEN;
+                    } else {
+                        print STDOUT BRIGHT_RED;
+                    }
+
+                    print STDOUT align_boolean($lengths[$i], $v->[$i]), RESET;
+                } elsif ($i == $FLAG_POS) {
+                    print STDOUT BRIGHT_YELLOW, align_flags($lengths[$i], $v->[$i]), RESET;
+                } else {
+                    print STDOUT BRIGHT_BLUE, align($lengths[$i], $v->[$i]), RESET;
+                }
+            }
+
+            print STDOUT "\n";
+        }
+    }
+
+    return $rc;
 }
 
 # vim: set tabstop=4 shiftwidth=4 softtabstop=4 expandtab : #

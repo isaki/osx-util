@@ -12,7 +12,7 @@ This repository stores useful scripts for use on OS X.
 
 ## jclean
 
-The current version of this utility is v1.2.0.
+The current version of this utility is v1.2.1.
 
 The jclean application is the ultimate Java removal tool for Java 8 for OS X. The actions taken by this script are an amalgamation of the incorrect Oracle Java removal documentation (they are missing things), several stack overflow questions and answers, and the testing and experimentation of isaki-x (thank goodness for Time Machine).
 
@@ -65,14 +65,17 @@ As of jclean 1.2.0, jclean supports removing other JDKs such as Corretto.
 
 ## kextpolicy
 
-The current version of this utility is v1.1.1
+The current version of this utility is v1.2.0
 
 This application dumps the contents of our security policy for kernel extensions (i.e. what extensions are installed and have been allowed and which have not). This script is for MacOS High Seirra (10.13) and newer.
 
     Usage: kextpolicy
     
-        h|help             : Display this screen.
-        version            : Display version information.
+        h|help               : Display this screen.
+        version              : Display version information.
+        r|remove <bundle_id> : Remove the specified entry with the given bundle_id;
+                               this requires that either SIP be disabled or that
+                               this process be executed in Recovery Mode.
     
     Environment Settings:
     
