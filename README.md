@@ -12,7 +12,7 @@ This repository stores useful scripts for use on OS X.
 
 ## jclean
 
-The current version of this utility is v1.2.1.
+The current version of this utility is v1.3.0.
 
 The jclean application is the ultimate Java removal tool for Java 8 for OS X. The actions taken by this script are an amalgamation of the incorrect Oracle Java removal documentation (they are missing things), several stack overflow questions and answers, and the testing and experimentation of isaki-x (thank goodness for Time Machine).
 
@@ -36,6 +36,9 @@ In order to work properly, this script needs to run as root (you should execute 
                               any errors in your command line.
     
     Environment Settings:
+
+        NO_COLOR (https://no-color.org)
+            If present, all color output will be suppressed.
     
         ANSI_COLORS_DISABLED
             If set to a true value, this will disable the color output. If you
@@ -65,7 +68,7 @@ As of jclean 1.2.0, jclean supports removing other JDKs such as Corretto.
 
 ## kextpolicy
 
-The current version of this utility is v1.2.0
+The current version of this utility is v1.3.0.
 
 This application dumps the contents of our security policy for kernel extensions (i.e. what extensions are installed and have been allowed and which have not). This script is for MacOS High Seirra (10.13) and newer.
 
@@ -78,6 +81,9 @@ This application dumps the contents of our security policy for kernel extensions
                                this process be executed in Recovery Mode.
     
     Environment Settings:
+
+        NO_COLOR (https://no-color.org)
+            If present, all color output will be suppressed.
     
         ANSI_COLORS_DISABLED
             If set to a true value, this will disable the color output. If you

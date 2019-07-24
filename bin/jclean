@@ -7,6 +7,11 @@ BEGIN {
     if ($^O ne 'darwin') {
         die 'The ', $^O, ' platform is not supported';
     }
+
+    # https://no-color.org
+    if (exists $ENV{'NO_COLOR'}) {
+        $ENV{'ANSI_COLORS_DISABLED'} = 1;
+    }
 }
 
 # Package includes
@@ -16,7 +21,7 @@ use Getopt::Long qw(:config bundling auto_version);
 use File::Glob qw();
 
 # Globals
-our $VERSION = q(1.2.1);
+our $VERSION = q(1.3.0);
 
 # Option parsing
 my ($exec, $help, $verbose, $nv);
@@ -219,6 +224,9 @@ Usage: ${scriptname}
                           any errors in your command line.
 
 Environment Settings:
+
+    NO_COLOR (https://no-color.org)
+        If present, all color output will be suppressed.
 
     ANSI_COLORS_DISABLED
         If set to a true value, this will disable the color output. If you

@@ -7,6 +7,11 @@ BEGIN {
     if ($^O ne 'darwin') {
         die 'The ', $^O, ' platform is not supported';
     }
+
+    # https://no-color.org
+    if (exists $ENV{'NO_COLOR'}) {
+        $ENV{'ANSI_COLORS_DISABLED'} = 1;
+    }
 }
 
 # Package includes
@@ -33,7 +38,7 @@ use constant SW_VERS_FLAG => '-productVersion';
 use constant RM_SQL_TEMPLATE => q(DELETE FROM kext_policy WHERE bundle_id = '%s';);
 
 # Globals
-our $VERSION = q(1.2.0);
+our $VERSION = q(1.3.0);
 our @MACOS_MIN = qw(10 13);
 our @MACOS_ROOT_REQUIRED = qw(10 14);
 our $BOOL_POS = 2;
@@ -117,6 +122,9 @@ Usage: ${scriptname}
                            this process be executed in Recovery Mode.
 
 Environment Settings:
+
+    NO_COLOR (https://no-color.org)
+        If present, all color output will be suppressed.
 
     ANSI_COLORS_DISABLED
         If set to a true value, this will disable the color output. If you
