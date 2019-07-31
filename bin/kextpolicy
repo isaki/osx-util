@@ -26,25 +26,24 @@ use File::Basename qw(basename);
 use constant SQLITE_EXE => '/usr/bin/sqlite3';
 use constant SUDO_EXE => '/usr/bin/sudo';
 use constant DB_PATH => '/private/var/db/SystemPolicyConfiguration/KextPolicy';
+use constant TABLE_NAME => 'kext_policy';
+use constant SEPARATOR => ';;';
 
 # Display Constants
-use constant DISPLAY_SQL => '.dump kext_policy';
 use constant COLUMN_JOIN => '|';
 
 # Mac Version Constants
 use constant SW_VERS_EXE => '/usr/bin/sw_vers';
 use constant SW_VERS_FLAG => '-productVersion';
 
-# Policy Removal constants
-use constant RM_SQL_TEMPLATE => q(DELETE FROM kext_policy WHERE bundle_id = '%s';);
-
 # Globals
-our $VERSION = q(1.4.0);
+our $VERSION = q(2.0.0);
 our @MACOS_MIN = qw(10 13);
 our @MACOS_ROOT_REQUIRED = qw(10 14);
 our $BOOL_POS = 2;
 our $FLAG_POS = 4;
-our $ASIZE = 5;
+our @COLUMNS = qw(team_id bundle_id allowed developer_name flags);
+our @SORT_COLS = qw(team_id bundle_id);
 
 # Usage
 my ($help);
@@ -183,56 +182,37 @@ sub dump_kext_policy {
     my $pid = undef;
     my $rc = 0;
 
-    my @keys;
     my @values = ();
     my @lengths = ();
 
+    my $asize = scalar(@COLUMNS);
     if ($pid = fork()) {
         $pipe->reader();
 
+        # Initialize length storage.
+        $#lengths = $asize - 1;
+        for (my $i = 0; $i < $asize; ++$i) {
+            $lengths[$i] = length($COLUMNS[$i]);
+        }
+
         # Read and print the data.
         while (my $line = $pipe->getline()) {
-            if ($line =~ /^INSERT INTO \S+ VALUES\((.+?)\);\s*$/o) {
-                my $raw = $1;
-                my @v = split(',', $raw);
+            chomp($line);
+            my @v = split(SEPARATOR, $line);
+            if (scalar(@v) != $asize) {
+                die 'Column count ', scalar(@v),
+                    ' found where ', $asize,
+                    ' expected for line: ', $line;
+            }
 
-                my $vsize = scalar(@v);
-                my $diff = $vsize - $ASIZE;
-                if ($diff > 0) {
-                    # This means we most likely ran into a vendor with a comma in
-                    # the name.
-                    my @buffer = ();
-
-                    # We know the dn is the second to last value
-                    my $dnpos = $ASIZE - 2;
-                    my @removed = splice(@v, $dnpos + 1, $diff);
-                    $v[$dnpos] = join(',', $v[$dnpos], @removed);
-                } elsif ($diff < 0) {
-                    die 'Column count ', $vsize,
-                        ' found where ', $ASIZE,
-                        ' expected for line: ', $line;
-                }
-
-                for (my $i = 0; $i < $ASIZE; ++$i) {
-                    $v[$i] =~ s/^'(.*)'$/$1/o;
-                    my $x = length($v[$i]);
-                    if ($x > $lengths[$i]) {
-                        $lengths[$i] = $x;
-                    }
-                }
-
-                # All manipulations are done.
-                push(@values, \@v);
-            } elsif ($line =~ /^CREATE TABLE \S+\s*\(\s*(.+?),\s+PRIMARY/o) {
-                my $raw = $1;
-                @keys = map { (split(/\s+/, $_))[0] } split(/,\s*/, $raw);
-                @lengths = map { length($_) } @keys;
-                if (scalar(@keys) != $ASIZE) {
-                    die 'Column count ', scalar(@keys),
-                        ' found where ', $ASIZE,
-                        ' expected for line: ', $line;
+            for (my $i = 0; $i < $asize; ++$i) {
+                my $x = length($v[$i]);
+                if ($x > $lengths[$i]) {
+                    $lengths[$i] = $x;
                 }
             }
+
+            push(@values, \@v);
         }
 
         $pipe->close() or warn 'Failed to close pipe: ', $!;
@@ -247,7 +227,16 @@ sub dump_kext_policy {
         open(STDOUT, '>&', $pipe);
         STDOUT->autoflush(1);
 
-        my @cmd = (SQLITE_EXE, DB_PATH, DISPLAY_SQL);
+        my $sql = join(' ',
+            'SELECT',
+            join(',', @COLUMNS),
+            'FROM',
+            TABLE_NAME,
+            'ORDER BY',
+            join(',', map { qq(${_} ASC) } @SORT_COLS)
+        );
+
+        my @cmd = (SQLITE_EXE, '-separator', SEPARATOR, DB_PATH, $sql);
         exec(@cmd);
         exit($!);
     } else {
@@ -257,17 +246,17 @@ sub dump_kext_policy {
     if ($rc == 0) {
         # Print the pretty table
 
-        for (my $i = 0; $i < $ASIZE; ++$i) {
+        for (my $i = 0; $i < $asize; ++$i) {
             if ($i > 0) {
                 print STDOUT ' ', COLUMN_JOIN, ' ';
             }
 
-            print STDOUT BRIGHT_MAGENTA, align($lengths[$i], $keys[$i]), RESET;
+            print STDOUT BRIGHT_MAGENTA, align($lengths[$i], $COLUMNS[$i]), RESET;
         }
 
         print STDOUT "\n";
 
-        for (my $i = 0; $i < $ASIZE; ++$i) {
+        for (my $i = 0; $i < $asize; ++$i) {
             if ($i > 0) {
                 print STDOUT '-', COLUMN_JOIN, '-';
             }
@@ -278,7 +267,7 @@ sub dump_kext_policy {
         print STDOUT "\n";
 
         foreach my $v (@values) {
-            for (my $i = 0; $i < $ASIZE; ++$i) {
+            for (my $i = 0; $i < $asize; ++$i) {
                 if ($i > 0) {
                     print STDOUT ' ', COLUMN_JOIN, ' ';
                 }

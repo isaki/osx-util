@@ -68,7 +68,7 @@ As of jclean 1.2.0, jclean supports removing other JDKs such as Corretto.
 
 ## kextpolicy
 
-The current version of this utility is v1.4.0.
+The current version of this utility is v2.0.0.
 
 This application dumps the contents of our security policy for kernel extensions (i.e. what extensions are installed and have been allowed and which have not). This script is for MacOS High Seirra (10.13) and newer.
 
