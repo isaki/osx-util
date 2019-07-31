@@ -36,7 +36,7 @@ In order to work properly, this script needs to run as root (you should execute 
                               any errors in your command line.
     
     Environment Settings:
-
+    
         NO_COLOR (https://no-color.org)
             If present, all color output will be suppressed.
     
@@ -68,7 +68,7 @@ As of jclean 1.2.0, jclean supports removing other JDKs such as Corretto.
 
 ## kextpolicy
 
-The current version of this utility is v1.3.0.
+The current version of this utility is v1.4.0.
 
 This application dumps the contents of our security policy for kernel extensions (i.e. what extensions are installed and have been allowed and which have not). This script is for MacOS High Seirra (10.13) and newer.
 
@@ -76,12 +76,9 @@ This application dumps the contents of our security policy for kernel extensions
     
         h|help               : Display this screen.
         version              : Display version information.
-        r|remove <bundle_id> : Remove the specified entry with the given bundle_id;
-                               this requires that either SIP be disabled or that
-                               this process be executed in Recovery Mode.
     
     Environment Settings:
-
+    
         NO_COLOR (https://no-color.org)
             If present, all color output will be suppressed.
     
@@ -98,14 +95,16 @@ This script will produce output as follows:
 
     team_id    | bundle_id              | allowed | developer_name | flags
     -----------|------------------------|---------|----------------|------
-    XXXXXXXXXX | com.isaki.kext.allowed |       t | Isaki-X        |    12
-    YYYYYYYYYY | com.isaki.kext.malware |       F | Not-Isaki-X    |     1
+    XXXXXXXXXX | com.isaki.kext.allowed |       t | Isaki          |    12
+    YYYYYYYYYY | com.isaki.kext.malware |       F | Not-Isaki      |     1
 
 Note that 't' for allowed will be green and 'F' for disallowed will be red when colorization is enabled.
 
 Please also note that as of MacOS Mojave (10.14) this script must be executed as root (you can use sudo). For example:
 
     sudo ~/git/osx-util/bin/kextpolicy
+
+If you do not use sudo, the script will reexecute itself via sudo on your behalf.
 
 - - -
 

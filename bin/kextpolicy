@@ -24,6 +24,7 @@ use File::Basename qw(basename);
 
 # SQL Lite Settings
 use constant SQLITE_EXE => '/usr/bin/sqlite3';
+use constant SUDO_EXE => '/usr/bin/sudo';
 use constant DB_PATH => '/private/var/db/SystemPolicyConfiguration/KextPolicy';
 
 # Display Constants
@@ -38,7 +39,7 @@ use constant SW_VERS_FLAG => '-productVersion';
 use constant RM_SQL_TEMPLATE => q(DELETE FROM kext_policy WHERE bundle_id = '%s';);
 
 # Globals
-our $VERSION = q(1.3.0);
+our $VERSION = q(1.4.0);
 our @MACOS_MIN = qw(10 13);
 our @MACOS_ROOT_REQUIRED = qw(10 14);
 our $BOOL_POS = 2;
@@ -46,10 +47,9 @@ our $FLAG_POS = 4;
 our $ASIZE = 5;
 
 # Usage
-my ($help, $remove);
+my ($help);
 GetOptions(
-    'h|help' => \$help,
-    'r|remove=s' => \$remove
+    'h|help' => \$help
 ) or die 'invalid usage; run with --help';
 
 if ($help) {
@@ -57,27 +57,17 @@ if ($help) {
     exit(0);
 }
 
-die 'Invalid bundle id passed to --remove' if (defined $remove && $remove !~ /^[A-Za-z0-9.-_]+$/);
-
 # Main
 
 check_os(@MACOS_MIN) or die basename($0), ' requires macOS ', join('.', @MACOS_MIN), ' or newer';
 
-if ($< != 0) {
-    if (check_os(@MACOS_ROOT_REQUIRED)) {
-        die basename($0), ' requires administrative access on macOS ', join('.', @MACOS_ROOT_REQUIRED), ' and newer';
-    } elsif (defiend $remove) {
-        die basename($0), ' requires administrative access on macOS to remove entries from KextPolicy';
-    }
+if ($< != 0 && check_os(@MACOS_ROOT_REQUIRED)) {
+    my @cmd = (SUDO_EXE, q(-u), q(#0), $0);
+    exec(@cmd);
+    exit($!);
 }
 
-my $rc;
-if (defined $remove) {
-    $rc = remove_id($remove);
-} else {
-    # Display mode
-    $rc = dump_kext_policy();
-}
+my $rc = dump_kext_policy();
 
 exit($rc);
 
@@ -117,9 +107,6 @@ Usage: ${scriptname}
 
     h|help               : Display this screen.
     version              : Display version information.
-    r|remove <bundle_id> : Remove the specified entry with the given bundle_id;
-                           this requires that either SIP be disabled or that
-                           this process be executed in Recovery Mode.
 
 Environment Settings:
 
@@ -189,31 +176,6 @@ sub check_os {
     }
 
     return $ret;
-}
-
-sub remove_id {
-    my ($id) = @_;
-
-    print STDOUT BRIGHT_YELLOW 'WARN: **** WARNING ****', RESET, "\n";
-    print STDOUT BRIGHT_YELLOW 'WARN: If SIP is enabled OR this is not recovery mode, this will fail.', RESET, "\n";
-
-    my $sql = sprintf(RM_SQL_TEMPLATE, $id);
-
-    my $rc = 0;
-    my $pid = undef;
-
-    if ($pid = fork()) {
-        waitpid($pid, 0);
-        $rc = $? >> 8;
-    } elsif (defined $pid) {
-        my @cmd = (SQLITE_EXE, DB_PATH, $sql);
-        exec(@cmd);
-        exit($!);
-    } else {
-        die $!;
-    }
-
-    return $rc;
 }
 
 sub dump_kext_policy {
