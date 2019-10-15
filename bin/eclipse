@@ -1,10 +1,12 @@
-#!/bin/bash
+#!/bin/zsh
 
 # LICENSE: https://github.com/isaki-x/osx-util/blob/master/LICENSE
 
 #
 # Override environment
 #
+
+echo $SHELL
 
 # This enables Mac keyring storage of our SSH key password for SSH based git
 # access.
@@ -14,7 +16,7 @@ export GIT_SSH="/usr/bin/ssh"
 #
 # Version Tracking
 #
-version="1.0.3"
+version="1.0.4"
 
 #
 # Argument Handling
