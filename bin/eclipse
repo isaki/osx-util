@@ -6,8 +6,6 @@
 # Override environment
 #
 
-echo $SHELL
-
 # This enables Mac keyring storage of our SSH key password for SSH based git
 # access.
 # SEE: https://wiki.eclipse.org/EGit/FAQ#Store_SSH_Key_Passphrase_in_Mac_Keyring
@@ -16,7 +14,7 @@ export GIT_SSH="/usr/bin/ssh"
 #
 # Version Tracking
 #
-version="1.0.4"
+version="1.0.5"
 
 #
 # Argument Handling
