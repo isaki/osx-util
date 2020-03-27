@@ -110,7 +110,7 @@ If you do not use sudo, the script will reexecute itself via sudo on your behalf
 
 ## eclipse
 
-The current version of this utility is v1.0.5.
+The current version of this utility is v1.0.6.
 
 This is a command line launcher for eclipse that has several features.
 

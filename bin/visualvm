@@ -1,0 +1,30 @@
+#!/bin/zsh
+
+# LICENSE: https://github.com/isaki-x/osx-util/blob/master/LICENSE
+
+#
+# Version Tracking
+#
+version="1.0.0"
+
+if [[ -n "${VISUALVM_INSTALL_ROOT}" ]]; then
+    jvvm=( "${VISUALVM_INSTALL_ROOT}/VisualVM.app" )
+else
+    jvvm=( "${HOME}/opt/visualvm/VisualVM.app" )
+fi
+
+if [[ -n "$1" ]]; then
+    jvvm+=( "--args" $@ )
+fi
+
+echo "VisualVM wrapper v${version}"
+
+echo "Setting working directory to '${HOME}'"
+cd "${HOME}" || exit $?
+
+echo "Launching: ${jvvm[@]}"
+exec /usr/bin/open ${jvvm}
+
+exit $?
+
+# vim: set tabstop=4 shiftwidth=4 softtabstop=4 expandtab : #

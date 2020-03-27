@@ -14,23 +14,23 @@ export GIT_SSH="/usr/bin/ssh"
 #
 # Version Tracking
 #
-version="1.0.5"
+version="1.0.6"
 
-#
-# Argument Handling
-#
-extra=''
-if [[ -n "$1" ]]; then
-    extra=" --args $@"
-fi
 
 #
 # The thing we want to execute
 #
 if [[ -n "${ECLIPSE_INSTALL_ROOT}" ]]; then
-    eclipse="${ECLIPSE_INSTALL_ROOT}/Eclipse.app${extra}"
+    eclipse=( "${ECLIPSE_INSTALL_ROOT}/Eclipse.app" )
 else
-    eclipse="${HOME}/opt/eclipse/Eclipse.app${extra}"
+    eclipse=( "${HOME}/opt/eclipse/Eclipse.app" )
+fi
+
+#
+# Argument Handling
+#
+if [[ -n "$1" ]]; then
+    eclipse+=( "--args" $@ )
 fi
 
 echo "Eclipse wrapper v${version}"
@@ -42,7 +42,7 @@ echo "Eclipse wrapper v${version}"
 echo "Setting working directory to '${HOME}'"
 cd "${HOME}" || exit $?
 
-echo "Launching: ${eclipse}"
+echo "Launching: ${eclipse[@]}"
 exec /usr/bin/open ${eclipse}
 
 exit $?
