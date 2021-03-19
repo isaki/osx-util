@@ -1,0 +1,202 @@
+#!/usr/bin/perl -w
+
+use strict;
+use warnings;
+
+use IO::Pipe;
+use IO::File;
+use File::Temp;
+
+use constant PFCTL => q(/sbin/pfctl);
+use constant IFCONFIG => q(/sbin/ifconfig);
+use constant VMNET_FILE => q(/Library/Preferences/VMware Fusion/networking);
+
+# Validate we are root.
+die 'This must be run as root' unless ($< == 0);
+
+# Begin.
+my $current = load_current();
+if (scalar(@{$current}) == 0) {
+    print STDOUT PFCTL, ' did not return any usable results; terminating execution', "\n";
+    exit(0);
+}
+
+my $vmnet = load_vmnet();
+if (scalar(@{$vmnet}) == 0) {
+    print STDOUT 'Unable to locate any VMWare NAT subnets; terminating execution', "\n";
+    exit(0);
+}
+
+my $tun = load_tun();
+if (scalar(@{$tun}) == 0) {
+    print STDOUT 'Unable to locate any utun interfaces; terminating execution', "\n";
+    exit(0);
+}
+
+# We need to create the new rules.
+my $rfile = File::Temp->new('vmnet_hack_XXXXXXXX', UNLINK => 1);
+
+my %written = ();
+
+# Write out what already was there.
+foreach my $x (@{$current}) {
+    print $rfile $x, "\n";
+    $written{$x} = undef;
+}
+
+# Now we need to write out the tunnel rules.
+foreach my $net (@{$vmnet}) {
+    foreach my $utun (@{$tun}) {
+        my $tmp = join('', 'nat on ', $utun, ' inet from ', $net, ' to any -> (', $utun, ') extfilter ei');
+        next if (exists($written{$tmp}));
+
+        print $rfile $tmp, "\n";
+        $written{$tmp} = undef;
+    }
+}
+
+my $fname = $rfile->filename();
+
+system(PFCTL, '-df', $fname);
+die 'Unable to clear existing pfctl rules' unless (($? >> 8) == 0);
+
+system(PFCTL, '-evf', $fname);
+die 'Unable to enable new rules' unless (($? >> 8) == 0);
+
+exit(0);
+
+# Subroutines
+
+sub load_tun {
+    my @ret = ();
+
+    my $lambda = sub {
+        my ($line) = @_;
+        if ($line =~ /^(utun\d+):\s+flags/o) {
+            push(@ret, $1);
+        }
+
+        return 1;
+    };
+
+    system_x([ IFCONFIG ], $lambda);
+
+    return \@ret;
+}
+
+sub load_vmnet {
+    my $fh = IO::File->new();
+    $fh->open(VMNET_FILE, 'r') or die $!;
+
+    # We need to do this in multiple passes, so we'll parse the first time
+    # through then go back and reread from memory
+
+    my @nats = ();
+    my @buffer = ();
+    while (my $line = $fh->getline()) {
+        chomp($line);
+        push(@buffer, $line);
+
+        if ($line =~ /^\S+\s+(\S+_\d+)_NAT\s+yes\s*$/o) {
+            push(@nats, $1);
+        }
+    }
+
+    $fh->close() or warn $!;
+
+    my @ret = ();
+    foreach my $n (@nats) {
+        my $sub = undef;
+        my $mask = undef;
+
+        foreach my $entry (@buffer) {
+            if ($entry =~ /${n}_HOSTONLY_SUBNET\s+(\S+)\s*$/) {
+                $sub = $1;
+            } elsif ($entry =~ /${n}_HOSTONLY_NETMASK\s+(\S+)\s*$/) {
+                my $maskaddr = $1;
+                $mask = mask_addr_to_cidr($maskaddr);
+            }
+        }
+
+        die 'Invalid vmnet file' unless (defined $sub && defined $mask);
+        push(@ret, join('/', $sub, $mask));
+    }
+
+    return \@ret;
+}
+
+sub load_current {
+    my @ret = ();
+
+    my $lambda = sub {
+        my ($line) = @_;
+        chomp($line);
+        if ($line =~ /^(?:no nat|nat on)\s+/o) {
+            push(@ret, $line);
+        }
+
+        return 1;
+    };
+
+    system_x([
+        PFCTL,
+        q(-a),
+        q(com.apple.internet-sharing/shared_v4),
+        q(-s),
+        q(nat)
+    ], $lambda);
+
+    return \@ret;
+}
+
+sub system_x {
+    my ($cmd, $lambda) = @_;
+
+    my $pipe = IO::Pipe->new();
+
+    my $pid = undef;
+
+    if ($pid = fork()) {
+        $pipe->reader();
+
+        while (my $line = $pipe->getline()) {
+            $lambda->($line);
+        }
+
+        $pipe->close();
+
+        waitpid($pid, 0);
+
+        die 'Command failure' unless (($? >> 8) == 0);
+    } elsif (defined $pid) {
+        $pipe->writer();
+        close(STDOUT);
+        open(STDOUT, '>&', $pipe);
+
+        exec(@{$cmd});
+        exit($!);
+    } else {
+        die $!;
+    }
+
+    return 1;
+}
+
+sub mask_addr_to_cidr {
+    my ($addr) = @_;
+
+    my @parts = split(q(\.), $addr, 4);
+    my $x = unpack(q(L), pack('C4', @parts));
+
+    return bit_count($x);
+}
+
+sub bit_count {
+    my ($i) = @_;
+    $i = $i - (($i >> 1) & 0x55555555);
+    $i = ($i & 0x33333333) + (($i >> 2) & 0x33333333);
+    $i = ($i + ($i >> 4)) & 0x0f0f0f0f;
+    $i = $i + ($i >> 8);
+    $i = $i + ($i >> 16);
+    return $i & 0x3f;
+}
