@@ -12,7 +12,7 @@ This repository stores useful scripts for use on OS X.
 
 ## jclean
 
-The current version of this utility is v1.3.0.
+The current version of this utility is v1.3.1.
 
 The jclean application is the ultimate Java removal tool for Java 8 for OS X. The actions taken by this script are an amalgamation of the incorrect Oracle Java removal documentation (they are missing things), several stack overflow questions and answers, and the testing and experimentation of isaki-x (thank goodness for Time Machine).
 
