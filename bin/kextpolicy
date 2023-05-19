@@ -9,7 +9,7 @@ BEGIN {
     }
 
     # https://no-color.org
-    if (exists $ENV{'NO_COLOR'}) {
+    if (defined $ENV{'NO_COLOR'} && $ENV{'NO_COLOR'} eq '1') {
         $ENV{'ANSI_COLORS_DISABLED'} = 1;
     }
 }
@@ -37,7 +37,7 @@ use constant SW_VERS_EXE => '/usr/bin/sw_vers';
 use constant SW_VERS_FLAG => '-productVersion';
 
 # Globals
-our $VERSION = q(2.0.0);
+our $VERSION = q(2.0.1);
 our @MACOS_MIN = qw(10 13);
 our @MACOS_ROOT_REQUIRED = qw(10 14);
 our $BOOL_POS = 2;
@@ -110,7 +110,7 @@ Usage: ${scriptname}
 Environment Settings:
 
     NO_COLOR (https://no-color.org)
-        If present, all color output will be suppressed.
+        If present and set to 1, all color output will be suppressed.
 
     ANSI_COLORS_DISABLED
         If set to a true value, this will disable the color output. If you
