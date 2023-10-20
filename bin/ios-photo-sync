@@ -1,0 +1,163 @@
+#!/usr/bin/perl -w
+
+use strict;
+use warnings;
+
+use JSON::PP qw();
+use IO::File;
+use Cwd qw();
+use File::Spec qw();
+use File::Basename qw(basename);
+
+use Getopt::Long qw(:config version bundling pass_through);
+
+# Constants
+use constant DEFAULT_CONFIG_FILE => q(.iospsync.json);
+
+# Globals
+our $VERSION = q(1.0.0);
+our $HOME = (getpwuid($<))[7];
+
+my ($help, $rlink, $config, $syncdir);
+
+GetOptions(
+    'h|help' => \$help,
+    'rlink|relative-link!' => \$rlink,
+    'config=s' => \$config,
+    'sync-dir=s' => \$syncdir
+) or die 'Invalid usage; please run with --help';
+
+if ($help) {
+    usage();
+    exit(0);
+}
+
+if (defined $config) {
+    die 'Invalid --config' unless (-f $config);
+} else {
+    $config = File::Spec->catfile($HOME, DEFAULT_CONFIG_FILE);
+}
+
+# Main
+my $sconf = SyncConfig->new($config);
+
+if (defined $rlink) {
+    print STDOUT 'Relative link set to ', $rlink, ' via command argument', "\n";
+} else {
+    $rlink = $sconf->isRelativeLink();
+    print STDOUT 'Relative link set to ', $rlink, "\n";
+}
+
+$syncdir ||= $sconf->getSyncDirectory();
+die 'No sync dir specified; please check ', $config, ' and/or the command line' unless (defined $syncdir);
+die 'Invalid sync directory' unless (-d $syncdir);
+
+print STDOUT 'Sync dir set to ', $syncdir, "\n";
+
+# Map files
+my @toLink;
+foreach my $file (@ARGV) {
+    if (-e $file) {
+        my $full = Cwd::abs_path($file);
+        die 'Unable to determine absolute path for ', $file unless (defined $full);
+        die $full, ' is not a file' unless (-f $full);
+
+        if ($rlink) {
+            my $link = File::Spec->abs2rel($full, $syncdir);
+            push(@toLink, $link);
+        } else {
+            push(@toLink, $full);
+        }
+    } else {
+        die 'Unable to locate ', $file;
+    }
+}
+
+# Determine link settings
+my @errors;
+foreach my $x (@toLink) {
+    my $create = File::Spec->catfile($syncdir, basename($x));
+    print STDOUT 'Creating symlink: ', $create, ' -> ', $x, "\n";
+
+    my $check = symlink($x, $create);
+    if (!$check) {
+        print STDOUT '[ERROR] Symlink creation failed!', "\n";
+        push(@errors, [ $create, $x ]);
+    }
+}
+
+my $rc = 0;
+if (scalar(@errors) > 0) {
+    print STDOUT 'Failed to create the following symlinks:', "\n";
+    print STDOUT ' - ', $_->[0], ' -> ', $_->[1], "\n" foreach (@errors);
+    $rc = 1;
+}
+
+exit($rc);
+
+#
+# Objects
+#
+package SyncConfig;
+
+use strict;
+use warnings;
+
+use Carp qw();
+
+sub new {
+    my $pkg = shift;
+    my ($file) = @_;
+
+    my $obj = _load_config($file);
+    return bless($obj, $pkg);
+}
+
+sub isRelativeLink {
+    return $_[0]->{'rlink'};
+}
+
+sub getSyncDirectory {
+    return $_[0]->{'sync_dir'};
+}
+
+sub _load_config {
+    my ($file) = @_;
+
+    my $fh = IO::File->new();
+
+    $fh->open($file, 'r') or Carp::confess('Failed to open ', $file, ' for read: ', $!);
+
+    my @buffer;
+    while (my $line = $fh->getline()) {
+        push(@buffer, $line);
+    }
+
+    $fh->close() or Carp::cluck($!);
+
+    my $json = join('', @buffer);
+
+    my $ref = JSON::PP::decode_json($json);
+
+    my $ret = {};
+
+    # Validate as we can.
+    if (defined $ref->{'use_relative_link'}) {
+        my $value = $ref->{'use_relative_link'};
+        Carp::croak('Invalid value for use_relative_link in JSON configuration') unless (JSON::PP::is_bool($value));
+        $ret->{'rlink'} = ($value) ? 1 : 0;
+    } else {
+        $ret->{'rlink'} = 0;
+    }
+
+    if (defined $ref->{'default_sync_dir'}) {
+        my $value = $ref->{'default_sync_dir'};
+        Carp::croak('Invalid value for default_sync_dir in JSON configuration') if (ref($value));
+
+        $value =~ s!^~/!qq(${main::HOME}/)!e;
+
+        $ret->{'sync_dir'} = $value;
+    }
+
+    return $ret;
+}
