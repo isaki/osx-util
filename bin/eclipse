@@ -14,7 +14,7 @@ export GIT_SSH="/usr/bin/ssh"
 #
 # Version Tracking
 #
-version="1.0.6"
+version="1.1.0"
 
 
 #
@@ -23,7 +23,7 @@ version="1.0.6"
 if [[ -n "${ECLIPSE_INSTALL_ROOT}" ]]; then
     eclipse=( "${ECLIPSE_INSTALL_ROOT}/Eclipse.app" )
 else
-    eclipse=( "${HOME}/opt/eclipse/Eclipse.app" )
+    eclipse=( "/Applications/Eclipse.app" )
 fi
 
 #
