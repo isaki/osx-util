@@ -15,7 +15,7 @@ use Getopt::Long qw(:config version bundling pass_through);
 use constant DEFAULT_CONFIG_FILE => q(.iospsync.json);
 
 # Globals
-our $VERSION = q(1.0.0);
+our $VERSION = q(1.0.1);
 our $HOME = (getpwuid($<))[7];
 
 my ($help, $rlink, $config, $syncdir);
@@ -94,6 +94,31 @@ if (scalar(@errors) > 0) {
 }
 
 exit($rc);
+
+sub usage {
+    my $scriptname = basename($0);
+
+    print STDOUT <<__USAGE_END__;
+
+Usage: $scriptname
+
+    h|help:
+        Print this screen.
+
+    rlink|relative-link|no-rlink|no-relative-link:
+        Enable or disable if the created link should be relative or an
+        absolute path.
+
+    config <path to config>:
+        Specify an alternate configuration file.
+
+    sync-dir <path to directory>:
+        The directory in which to create the symlink.
+
+__USAGE_END__
+
+    return 1;
+}
 
 #
 # Objects
