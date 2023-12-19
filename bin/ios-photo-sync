@@ -15,7 +15,7 @@ use Getopt::Long qw(:config version bundling pass_through);
 use constant DEFAULT_CONFIG_FILE => q(.iospsync.json);
 
 # Globals
-our $VERSION = q(1.0.1);
+our $VERSION = q(1.0.2);
 our $HOME = (getpwuid($<))[7];
 
 my ($help, $rlink, $config, $syncdir);
@@ -150,8 +150,7 @@ sub _load_config {
     my ($file) = @_;
 
     my $fh = IO::File->new();
-
-    $fh->open($file, 'r') or Carp::confess('Failed to open ', $file, ' for read: ', $!);
+    $fh->open($file, 'r') or Carp::confess('Failed to open ', $file, ' for read');
 
     my @buffer;
     while (my $line = $fh->getline()) {
