@@ -15,16 +15,17 @@ use Getopt::Long qw(:config version bundling pass_through);
 use constant DEFAULT_CONFIG_FILE => q(.iospsync.json);
 
 # Globals
-our $VERSION = q(1.1.0);
+our $VERSION = q(1.2.0);
 our $HOME = (getpwuid($<))[7];
 
-my ($help, $rlink, $config, $syncdir);
+my ($help, $rlink, $config, $syncdir, $stdin);
 
 GetOptions(
     'h|help' => \$help,
     'rlink|relative-link!' => \$rlink,
     'config=s' => \$config,
-    'sync-dir=s' => \$syncdir
+    'sync-dir=s' => \$syncdir,
+    'stdin' => \$stdin
 ) or die 'Invalid usage; please run with --help';
 
 if ($help) {
@@ -36,6 +37,12 @@ if (defined $config) {
     die 'Invalid --config' unless (-f $config);
 } else {
     $config = File::Spec->catfile($HOME, DEFAULT_CONFIG_FILE);
+}
+
+if ($stdin) {
+    die '--stdin specified, but file arguments detected' if (scalar(@ARGV) != 0);
+} elsif (scalar @ARGV == 0) {
+    die 'No files provided';
 }
 
 # Main
@@ -56,7 +63,10 @@ print STDOUT 'Sync dir set to ', $syncdir, "\n";
 
 # Map files
 my @toLink;
-foreach my $file (@ARGV) {
+
+# Create iterator
+my $iter = ($stdin) ? HandleFileIterator->new(\*STDIN) : ARGVFileIterator->new(\@ARGV);
+while (my $file = $iter->next()) {
     if (-e $file) {
         my $full = Cwd::abs_path($file);
         die 'Unable to determine absolute path for ', $file unless (defined $full);
@@ -114,6 +124,9 @@ Usage: $scriptname
 
     sync-dir <path to directory>:
         The directory in which to create the symlink.
+
+    stdin
+        Read files from STDIN instead of the argument list.
 
 __USAGE_END__
 
@@ -184,4 +197,88 @@ sub _load_config {
     }
 
     return $ret;
+}
+
+#---
+
+package FileIterator;
+
+use strict;
+use warnings;
+
+use Carp qw();
+
+sub new {
+    my $pkg = shift;
+    return bless({}, $pkg);
+}
+
+sub next {
+    Carp::confess("Not implemented");
+}
+
+sub close {
+    return 1;
+}
+
+package HandleFileIterator;
+
+use strict;
+use warnings;
+
+use parent -norequire, 'FileIterator';
+
+sub new {
+    my $pkg = shift;
+
+    my $obj = $pkg->SUPER::new();
+    $obj->{'fh'} = $_[0];
+
+    return bless($obj, $pkg);
+}
+
+sub next {
+    my ($self) = @_;
+
+    my $ret = $self->{'fh'}->getline();
+
+    if (defined $ret) {
+        chomp($ret);
+    }
+
+    return $ret;
+}
+
+sub close {
+    my ($self) = @_;
+    $self->SUPER::close();
+    return $self->{'fh'}->close();
+}
+
+package ARGVFileIterator;
+
+use strict;
+use warnings;
+
+use parent -norequire, 'FileIterator';
+
+sub new {
+    my $pkg = shift;
+
+    my $obj = $pkg->SUPER::new();
+
+    my $argv = $_[0];
+
+    $obj->{'i'} = 0;
+    $obj->{'argc'} = scalar(@{$argv});
+    $obj->{'argv'} = $argv;
+
+    return bless($obj, $pkg);
+}
+
+sub next {
+    my ($self) = @_;
+
+    my $current = $self->{'i'}++;
+    return ($current < $self->{'argc'}) ? $self->{'argv'}->[$current] : undef;
 }
