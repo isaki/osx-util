@@ -7,15 +7,20 @@ use JSON::PP qw();
 use IO::File;
 use Cwd qw();
 use File::Spec qw();
-use File::Basename qw(basename);
+use File::Basename qw();
+
+use Fcntl ':mode';
 
 use Getopt::Long qw(:config version bundling pass_through);
 
 # Constants
 use constant DEFAULT_CONFIG_FILE => q(.iospsync.json);
 
+use constant ADD_MODE => 0;
+use constant VERIFY_MODE => 1;
+
 # Globals
-our $VERSION = q(1.2.0);
+our $VERSION = q(2.0.0);
 our $HOME = (getpwuid($<))[7];
 
 my ($help, $rlink, $config, $syncdir, $stdin);
@@ -33,6 +38,23 @@ if ($help) {
     exit(0);
 }
 
+# Determine command mode
+my $mode;
+if (scalar(@ARGV) == 0) {
+    die 'No command provided';
+} elsif ($ARGV[0] eq 'add') {
+    die 'File argument(s) required' if (scalar(@ARGV) == 1);
+
+    $mode = ADD_MODE;
+} elsif ($ARGV[0] eq 'verify') {
+    die 'File argument(s) not supported for verify command' if (scalar(@ARGV) > 1);
+    die '--stdin not supported for verify command' if ($stdin);
+
+    $mode = VERIFY_MODE;
+} else {
+    die 'Unsupported command: ', $ARGV[0];
+}
+
 if (defined $config) {
     die 'Invalid --config' unless (-f $config);
 } else {
@@ -40,9 +62,7 @@ if (defined $config) {
 }
 
 if ($stdin) {
-    die '--stdin specified, but file arguments detected' if (scalar(@ARGV) != 0);
-} elsif (scalar @ARGV == 0) {
-    die 'No files provided';
+    die '--stdin specified, but file arguments detected' if (scalar(@ARGV) > 1);
 }
 
 # Main
@@ -61,56 +81,56 @@ die 'Invalid sync directory' unless (-d $syncdir);
 
 print STDOUT 'Sync dir set to ', $syncdir, "\n";
 
-# Map files
-my @toLink;
+# Command to run.
+my $command;
 
-# Create iterator
-my $iter = ($stdin) ? HandleFileIterator->new(\*STDIN) : ARGVFileIterator->new(\@ARGV);
-while (my $file = $iter->next()) {
-    if (-e $file) {
-        my $full = Cwd::abs_path($file);
-        die 'Unable to determine absolute path for ', $file unless (defined $full);
-        die $full, ' is not a file' unless (-f $full);
+if ($mode == VERIFY_MODE) {
+    my $iter = VerifyFileIterator->new($syncdir);
+    $command = VerifyCommand->new($iter);
+} elsif ($mode == ADD_MODE) {
+    my $iter;
 
-        if ($rlink) {
-            my $link = File::Spec->abs2rel($full, $syncdir);
-            push(@toLink, $link);
-        } else {
-            push(@toLink, $full);
-        }
+    if ($stdin) {
+        $iter = HandleFileIterator->new(\*STDIN);
     } else {
-        die 'Unable to locate ', $file;
+        shift(@ARGV);
+        $iter = ARGVFileIterator->new(\@ARGV);
+    }
+
+    $command = AddCommand->new($iter, $syncdir, $rlink);
+} else {
+    die 'Fatal code error; operation mode ', $mode, ' not handled';
+}
+
+my ($result, $err) = $command->run();
+
+if (scalar(@{$err})) {
+    print STDOUT qq(\n--- ERROR SUMMARY ---\n);
+
+    my $i = 0;
+    foreach my $entry (@{$err}) {
+        my $m = $entry->message();
+        my $f = $entry->file();
+        my $t = $entry->target();
+
+        print STDOUT "\n";
+        print STDOUT 'Error ', $i++, "\n";
+        print STDOUT '- Message: ', (defined $m) ? $m : '_undef_', "\n";
+        print STDOUT '-    File: ', (defined $f) ? $f : '_na_', "\n";
+        print STDOUT '-  Target: ', (defined $t) ? $t : '_na_', "\n";
     }
 }
 
-# Determine link settings
-my @errors;
-foreach my $x (@toLink) {
-    my $create = File::Spec->catfile($syncdir, basename($x));
-    print STDOUT 'Creating symlink: ', $create, ' -> ', $x, "\n";
-
-    my $check = symlink($x, $create);
-    if (!$check) {
-        print STDOUT '[ERROR] Symlink creation failed!', "\n";
-        push(@errors, [ $create, $x ]);
-    }
-}
-
-my $rc = 0;
-if (scalar(@errors) > 0) {
-    print STDOUT 'Failed to create the following symlinks:', "\n";
-    print STDOUT ' - ', $_->[0], ' -> ', $_->[1], "\n" foreach (@errors);
-    $rc = 1;
-}
-
-exit($rc);
+exit(($result) ? 0 : 11);
 
 sub usage {
-    my $scriptname = basename($0);
+    my $scriptname = File::Basename::basename($0);
 
     print STDOUT <<__USAGE_END__;
 
-Usage: $scriptname
+Usage: $scriptname <options> <commands> <...>
+
+OPTIONS:
 
     h|help:
         Print this screen.
@@ -127,6 +147,14 @@ Usage: $scriptname
 
     stdin
         Read files from STDIN instead of the argument list.
+
+COMMANDs:
+
+    add:
+        Add files provided.
+
+    verify:
+        This takes no argument; this validates symlinks.
 
 __USAGE_END__
 
@@ -214,7 +242,7 @@ sub new {
 }
 
 sub next {
-    Carp::confess("Not implemented");
+    Carp::confess('Not implemented');
 }
 
 sub close {
@@ -281,4 +309,247 @@ sub next {
 
     my $current = $self->{'i'}++;
     return ($current < $self->{'argc'}) ? $self->{'argv'}->[$current] : undef;
+}
+
+package VerifyFileIterator;
+
+use strict;
+use warnings;
+
+use Carp qw();
+
+use parent -norequire, 'FileIterator';
+
+sub new {
+    my $pkg = shift;
+    my $obj = $pkg->SUPER::new();
+    my $dir = $_[0];
+
+    opendir(my $dh, $dir) or Carp::confess('Failed to open directory ', $dir, ' for read: ', $!);
+
+    $obj->{'dh'} = $dh;
+    $obj->{'dir'} = $dir;
+
+    return bless($obj, $pkg);
+}
+
+sub next {
+    my ($self) = @_;
+
+    my $dh = $self->{'dh'};
+    return undef unless ($dh);
+
+    while (my $entry = readdir($dh)) {
+        next if ($entry =~ /^\.+$/o);
+
+        my $fullPath = File::Spec->catfile($self->{'dir'}, $entry);
+        return $fullPath;
+    }
+
+    # If we made it here, the dir contents are exhausted.
+    $self->_close();
+    return undef;
+}
+
+sub _close {
+    my ($self) = @_;
+
+    closedir($self->{'dh'});
+    $self->{'dh'} = undef;
+
+    return 1;
+}
+
+sub DESTROY {
+    my $self = shift;
+
+    if ($self->{'dh'}) {
+        $self->_close();
+    }
+
+    return 1;
+}
+
+# struct error;
+package CommandError;
+
+use strict;
+use warnings;
+
+sub new {
+    my $pkg = shift;
+    my ($msg, $file, $target) = @_;
+    return bless([$msg, $file, $target], $pkg);
+}
+
+sub file {
+    return $_[0]->[1];
+}
+
+sub message {
+    return $_[0]->[0];
+}
+
+sub target {
+    return $_[0]->[2];
+}
+
+package Command;
+
+use strict;
+use warnings;
+
+use Carp qw();
+use Scalar::Util qw();
+
+sub new {
+    my $pkg = shift;
+    my ($iter) = @_;
+
+    Carp::confess('Iterator required') unless (defined $iter);
+    Carp::confess('Invalid iterator') unless (defined Scalar::Util::blessed($iter) && $iter->isa('FileIterator'));
+
+    return bless({
+        'iter' => $iter
+    }, $pkg);
+}
+
+sub run {
+    Carp::confess('Not implemented');
+}
+
+sub _iterator {
+    return $_[0]->{'iter'};
+}
+
+package AddCommand;
+
+use strict;
+use warnings;
+
+use parent -norequire, 'Command';
+
+sub new {
+    my $pkg = shift;
+    my ($iter, $sdir, $rlink) = @_;
+
+    my $obj = $pkg->SUPER::new($iter);
+    $obj->{'rlink'} = ($rlink) ? 1 : 0;
+    $obj->{'sdir'} = $sdir;
+    return bless($obj, $pkg);
+}
+
+sub run {
+    my ($self) = @_;
+
+    my $iter = $self->_iterator();
+    my $rlink = $self->{'rlink'};
+    my $sdir = $self->{'sdir'};
+
+    my @errors;
+    my @toLink;
+    while (my $file = $iter->next()) {
+        if (-e $file) {
+            my $full = Cwd::abs_path($file);
+            if (! defined $full) {
+                push(@errors, CommandError->new('Unable to determine absolute path', $file));
+                next;
+            } elsif (! -f $full) {
+                push(@errors, CommandError->new('Not a file', $file));
+                next;
+            }
+
+            push(@toLink, $full);
+        } else {
+            push(@errors, CommandError->new('File not found', $file));
+        }
+    }
+
+    return (0, \@errors) if (scalar(@errors) != 0 || scalar(@toLink) == 0);
+
+    # Determine link settings
+    foreach my $x (@toLink) {
+        my $create = File::Spec->catfile($sdir, File::Basename::basename($x));
+
+        if (-l $create) {
+            my $tmp = Cwd::abs_path($create);
+
+            if (! defined $tmp) {
+                push(@errors, CommandError->new($!, $x, $create));
+            } elsif (-e $tmp) {
+                # We already know X exists from above checks
+                my ($devX, $inoX) = (stat($x))[0, 1];
+                my ($devT, $inoT) = (stat($tmp))[0, 1];
+
+                if ($devX != $devT || $inoX != $inoT) {
+                    push(@errors, CommandError->new('Symlink already exists', $x, $create));
+                }
+            } else {
+                push(@errors, CommandError->new('Broken symlink already exists', $x, $create));
+            }
+
+            next;
+        } elsif (-e $create) {
+            push(@errors, CommandError->new('File exists where symlink required', $x, $create));
+            next;
+        }
+
+        my $link = ($rlink) ? File::Spec->abs2rel($x, $sdir) : $x;
+
+        print STDOUT 'Creating symlink: ', $create, ' -> ', $link, "\n";
+
+        my $check = symlink($link, $create);
+        if (!$check) {
+            print STDOUT '[ERROR] Symlink creation failed!', "\n";
+            push(@errors, CommandError->new('Symlink creation failed', $x, $create));
+        }
+    }
+
+    my $ret = (scalar(@errors) == 0) ? 1 : 0;
+    return ($ret, \@errors);
+}
+
+package VerifyCommand;
+
+use strict;
+use warnings;
+
+use parent -norequire, 'Command';
+
+sub new {
+    my $pkg = shift;
+    my ($iter) = @_;
+    my $obj = $pkg->SUPER::new($iter);
+    return bless($obj, $pkg);
+}
+
+sub run {
+    my ($self) = @_;
+
+    my $iter = $self->_iterator();
+
+    my @errors;
+    while (my $file = $iter->next()) {
+        # Due to how this works, we know the file exists.
+        if (-l $file) {
+            my $resolved = Cwd::abs_path($file);
+            if (! defined $resolved) {
+                push(@errors, CommandError->new($!, $file));
+            } elsif (-e $resolved) {
+                my $mode = (stat($resolved))[2];
+                my $type = $mode & main::S_IFMT;
+
+                if (! main::S_ISREG($type)) {
+                    push(@errors, CommandError->new('Invalid target file type', $file, $resolved));
+                }
+            } else {
+                push(@errors, CommandError->new('Broken symlink', $file, $resolved));
+            }
+        }
+
+        #else this is something we don't need to validate.
+    }
+
+    my $ret = (scalar(@errors) == 0) ? 1 : 0;
+    return ($ret, \@errors);
 }
