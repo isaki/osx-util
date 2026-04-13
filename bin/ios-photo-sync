@@ -20,8 +20,9 @@ use constant ADD_MODE => 0;
 use constant VERIFY_MODE => 1;
 
 # Globals
-our $VERSION = q(2.0.0);
+our $VERSION = q(2.0.1);
 our $HOME = (getpwuid($<))[7];
+our @ALLOWED_EXTENSIONS = qw(png jpg heic mp4);
 
 my ($help, $rlink, $config, $syncdir, $stdin);
 
@@ -457,6 +458,9 @@ sub run {
             } elsif (! -f $full) {
                 push(@errors, CommandError->new('Not a file', $file));
                 next;
+            } elsif (! _verify_file_extension($full)) {
+                push(@errors, CommandError->new('Unsupported file extension', $file));
+                next;
             }
 
             push(@toLink, $full);
@@ -507,6 +511,16 @@ sub run {
 
     my $ret = (scalar(@errors) == 0) ? 1 : 0;
     return ($ret, \@errors);
+}
+
+sub _verify_file_extension {
+    if ($_[0] =~ /\.([a-zA-Z0-9]+)$/o) {
+        my $ext = lc($1);
+        my $found = grep { $ext eq $_ } @main::ALLOWED_EXTENSIONS;
+        return ($found > 0) ? 1 : 0;
+    } # else failure
+
+    return 0;
 }
 
 package VerifyCommand;
