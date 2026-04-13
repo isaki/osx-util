@@ -20,7 +20,7 @@ use constant ADD_MODE => 0;
 use constant VERIFY_MODE => 1;
 
 # Globals
-our $VERSION = q(2.1.0);
+our $VERSION = q(2.1.1);
 our $HOME = (getpwuid($<))[7];
 our @ALLOWED_EXTENSIONS = qw(png jpg heic mp4);
 
@@ -44,7 +44,7 @@ my $mode;
 if (scalar(@ARGV) == 0) {
     die 'No command provided';
 } elsif ($ARGV[0] eq 'add') {
-    die 'File argument(s) required' if (scalar(@ARGV) == 1);
+    die 'File argument(s) or --stdin required for add command' if (scalar(@ARGV) == 1 && ! $stdin);
 
     $mode = ADD_MODE;
 } elsif ($ARGV[0] eq 'verify') {
@@ -580,6 +580,8 @@ sub run {
     my $iter = $self->_iterator();
 
     my @errors;
+
+    my $i = 0;
     while (my $file = $iter->next()) {
         # Due to how this works, we know the file exists.
         if (-l $file) {
@@ -590,7 +592,9 @@ sub run {
                 my $mode = (stat($resolved))[2];
                 my $type = $mode & main::S_IFMT;
 
-                if (! main::S_ISREG($type)) {
+                if (main::S_ISREG($type)) {
+                    ++$i;
+                } else {
                     push(@errors, CommandError->new('Invalid target file type', $file, $resolved));
                 }
             } else {
@@ -601,6 +605,14 @@ sub run {
         #else this is something we don't need to validate.
     }
 
-    my $ret = (scalar(@errors) == 0) ? 1 : 0;
+    my $ret = 0;
+    if (scalar(@errors) == 0) {
+        print STDOUT $i, ' link';
+        print STDOUT 's' if ($i != 1);
+        print STDOUT ' verified', "\n";
+
+        $ret = 1;
+    }
+
     return ($ret, \@errors);
 }
