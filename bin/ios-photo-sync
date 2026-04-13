@@ -20,7 +20,7 @@ use constant ADD_MODE => 0;
 use constant VERIFY_MODE => 1;
 
 # Globals
-our $VERSION = q(2.0.1);
+our $VERSION = q(2.1.0);
 our $HOME = (getpwuid($<))[7];
 our @ALLOWED_EXTENSIONS = qw(png jpg heic mp4);
 
@@ -428,6 +428,8 @@ package AddCommand;
 use strict;
 use warnings;
 
+use Carp qw();
+
 use parent -norequire, 'Command';
 
 sub new {
@@ -506,6 +508,14 @@ sub run {
         if (!$check) {
             print STDOUT '[ERROR] Symlink creation failed!', "\n";
             push(@errors, CommandError->new('Symlink creation failed', $x, $create));
+            next;
+        }
+
+        $check = _set_link_time($x, $create);
+
+        if (!$check) {
+            print STDOUT '[ERROR] Failed to set file times for symlink!', "\n";
+            push(@errors, CommandError->new('Symlink time modification failed', $x, $create));
         }
     }
 
@@ -519,6 +529,33 @@ sub _verify_file_extension {
         my $found = grep { $ext eq $_ } @main::ALLOWED_EXTENSIONS;
         return ($found > 0) ? 1 : 0;
     } # else failure
+
+    return 0;
+}
+
+sub _set_link_time {
+    my ($source, $link) = @_;
+
+    my ($atime, $mtime) = (stat($source))[8 ,9];
+
+    my $pid = undef;
+    if ($pid = fork()) {
+        waitpid($pid, 0);
+        my $rc = $? >> 8;
+        return $rc == 0;
+    } elsif (defined $pid) {
+        my @cmd = (
+            '/usr/bin/touch',
+            '-h',
+            '-r', $source,
+            $link
+        );
+
+        exec(@cmd);
+        exit(127);
+    } else {
+        Carp::confess('Failure to fork: ', $!);
+    }
 
     return 0;
 }
