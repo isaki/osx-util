@@ -18,9 +18,10 @@ use constant DEFAULT_CONFIG_FILE => q(.iospsync.json);
 
 use constant ADD_MODE => 0;
 use constant VERIFY_MODE => 1;
+use constant CLEAN_MODE => 2;
 
 # Globals
-our $VERSION = q(2.1.1);
+our $VERSION = q(2.2.0);
 our $HOME = (getpwuid($<))[7];
 our @ALLOWED_EXTENSIONS = qw(png jpg heic mp4);
 
@@ -52,6 +53,11 @@ if (scalar(@ARGV) == 0) {
     die '--stdin not supported for verify command' if ($stdin);
 
     $mode = VERIFY_MODE;
+} elsif ($ARGV[0] eq 'clean') {
+    die 'File argument(s) not support for clean command' if (scalar(@ARGV) > 1);
+    die '--stdin not support for clean command' if ($stdin);
+
+    $mode = CLEAN_MODE;
 } else {
     die 'Unsupported command: ', $ARGV[0];
 }
@@ -99,6 +105,9 @@ if ($mode == VERIFY_MODE) {
     }
 
     $command = AddCommand->new($iter, $syncdir, $rlink);
+} elsif ($mode == CLEAN_MODE) {
+    my $iter = VerifyFileIterator->new($syncdir);
+    $command = CleanCommand->new($iter);
 } else {
     die 'Fatal code error; operation mode ', $mode, ' not handled';
 }
@@ -112,13 +121,13 @@ if (scalar(@{$err})) {
     foreach my $entry (@{$err}) {
         my $m = $entry->message();
         my $f = $entry->file();
-        my $t = $entry->target();
+        my $t = $entry->lname();
 
         print STDOUT "\n";
         print STDOUT 'Error ', $i++, "\n";
         print STDOUT '- Message: ', (defined $m) ? $m : '_undef_', "\n";
         print STDOUT '-    File: ', (defined $f) ? $f : '_na_', "\n";
-        print STDOUT '-  Target: ', (defined $t) ? $t : '_na_', "\n";
+        print STDOUT '- Symlink: ', (defined $t) ? $t : '_na_', "\n";
     }
 }
 
@@ -155,7 +164,11 @@ COMMANDs:
         Add files provided.
 
     verify:
-        This takes no argument; this validates symlinks.
+        This takes no arguments; this validates symlinks.
+
+    clean:
+        This takes no arguments; this is similar to verify but purges broken
+        links.
 
 __USAGE_END__
 
@@ -379,8 +392,8 @@ use warnings;
 
 sub new {
     my $pkg = shift;
-    my ($msg, $file, $target) = @_;
-    return bless([$msg, $file, $target], $pkg);
+    my ($msg, $file, $lname) = @_;
+    return bless([$msg, $file, $lname], $pkg);
 }
 
 sub file {
@@ -391,7 +404,7 @@ sub message {
     return $_[0]->[0];
 }
 
-sub target {
+sub lname {
     return $_[0]->[2];
 }
 
@@ -421,6 +434,23 @@ sub run {
 
 sub _iterator {
     return $_[0]->{'iter'};
+}
+
+sub _getLinkTarget {
+    my ($self, $lname) = @_;
+
+    my $ltarget = readlink($lname);
+    if (! defined $ltarget) {
+        return undef;
+    }
+
+    my $linkDir = File::Spec->rel2abs(File::Basename::dirname($lname));
+    my $atarget = File::Spec->rel2abs($ltarget, $linkDir);
+
+    # We can attempt to link chase.
+    my $ctarget = Cwd::abs_path($atarget);
+
+    return (defined $ctarget) ? $ctarget : $atarget;
 }
 
 package AddCommand;
@@ -478,10 +508,10 @@ sub run {
         my $create = File::Spec->catfile($sdir, File::Basename::basename($x));
 
         if (-l $create) {
-            my $tmp = Cwd::abs_path($create);
+            my $tmp = $self->_getLinkTarget($create);
 
             if (! defined $tmp) {
-                push(@errors, CommandError->new($!, $x, $create));
+                push(@errors, CommandError->new('Failed to readlink', $x, $create));
             } elsif (-e $tmp) {
                 # We already know X exists from above checks
                 my ($devX, $inoX) = (stat($x))[0, 1];
@@ -585,9 +615,9 @@ sub run {
     while (my $file = $iter->next()) {
         # Due to how this works, we know the file exists.
         if (-l $file) {
-            my $resolved = Cwd::abs_path($file);
+            my $resolved = $self->_getLinkTarget($file);
             if (! defined $resolved) {
-                push(@errors, CommandError->new($!, $file));
+                push(@errors, CommandError->new('Failed to readlink', undef, $file));
             } elsif (-e $resolved) {
                 my $mode = (stat($resolved))[2];
                 my $type = $mode & main::S_IFMT;
@@ -595,10 +625,10 @@ sub run {
                 if (main::S_ISREG($type)) {
                     ++$i;
                 } else {
-                    push(@errors, CommandError->new('Invalid target file type', $file, $resolved));
+                    push(@errors, CommandError->new('Invalid target file type', $resolved, $file));
                 }
             } else {
-                push(@errors, CommandError->new('Broken symlink', $file, $resolved));
+                push(@errors, CommandError->new('Broken symlink', $resolved, $file));
             }
         }
 
@@ -614,5 +644,61 @@ sub run {
         $ret = 1;
     }
 
+    return ($ret, \@errors);
+}
+
+package CleanCommand;
+
+use strict;
+use warnings;
+
+use Carp qw();
+
+use parent -norequire, 'Command';
+
+sub new {
+    my $pkg = shift;
+    my ($iter) = @_;
+    my $obj = $pkg->SUPER::new($iter);
+    return bless($obj, $pkg);
+}
+
+sub run {
+    my ($self) = @_;
+
+    my $iter = $self->_iterator();
+
+    my @errors;
+
+    while (my $file = $iter->next()) {
+        # Due to how this works, we know the file exists.
+        if (-l $file) {
+            my $resolved = $self->_getLinkTarget($file);
+            if (! defined $resolved) {
+                push(@errors, CommandError->new('Failed to readlink', undef, $file));
+            } elsif (-e $resolved) {
+                my $mode = (stat($resolved))[2];
+                my $type = $mode & main::S_IFMT;
+
+                if (! main::S_ISREG($type)) {
+                    print STDOUT 'Removing symlink with invalid target file type: ', $file, "\n";
+                    my $check = unlink($file);
+                    if (! $check) {
+                        push(@errors, CommandError->new($!, undef, $file));
+                    }
+                }
+            } else {
+                print STDOUT 'Removing broken symlink: ', $file, "\n";
+                my $check = unlink($file);
+                if (! $check) {
+                    push(@errors, CommandError->new($!, undef, $file));
+                }
+            }
+        }
+
+        #else this is something we don't need to validate.
+    }
+
+    my $ret = (scalar(@errors) == 0) ? 1 : 0;
     return ($ret, \@errors);
 }
