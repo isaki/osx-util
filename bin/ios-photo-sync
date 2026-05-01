@@ -22,7 +22,7 @@ use constant VERIFY_MODE => 1;
 use constant CLEAN_MODE => 2;
 
 # Globals
-our $VERSION = q(2.2.1);
+our $VERSION = q(2.3.0);
 our $HOME = (getpwuid($<))[7];
 our @ALLOWED_EXTENSIONS = qw(png jpg heic mp4);
 
@@ -454,6 +454,31 @@ sub _getLinkTarget {
     return (defined $ctarget) ? $ctarget : $atarget;
 }
 
+sub _setLinkTime {
+    my ($self, $source, $link) = @_;
+
+    my $pid = undef;
+    if ($pid = fork()) {
+        waitpid($pid, 0);
+        my $rc = $? >> 8;
+        return $rc == 0;
+    } elsif (defined $pid) {
+        my @cmd = (
+            '/usr/bin/touch',
+            '-h',
+            '-r', $source,
+            $link
+        );
+
+        exec(@cmd);
+        exit(127);
+    } else {
+        Carp::confess('Failure to fork: ', $!);
+    }
+
+    return 0;
+}
+
 package AddCommand;
 
 use strict;
@@ -542,7 +567,7 @@ sub run {
             next;
         }
 
-        $check = _set_link_time($x, $create);
+        $check = $self->_setLinkTime($x, $create);
 
         if (!$check) {
             print STDOUT '[ERROR] Failed to set file times for symlink!', "\n";
@@ -564,32 +589,7 @@ sub _verify_file_extension {
     return 0;
 }
 
-sub _set_link_time {
-    my ($source, $link) = @_;
 
-    my ($atime, $mtime) = (stat($source))[8 ,9];
-
-    my $pid = undef;
-    if ($pid = fork()) {
-        waitpid($pid, 0);
-        my $rc = $? >> 8;
-        return $rc == 0;
-    } elsif (defined $pid) {
-        my @cmd = (
-            '/usr/bin/touch',
-            '-h',
-            '-r', $source,
-            $link
-        );
-
-        exec(@cmd);
-        exit(127);
-    } else {
-        Carp::confess('Failure to fork: ', $!);
-    }
-
-    return 0;
-}
 
 package VerifyCommand;
 
@@ -620,11 +620,17 @@ sub run {
             if (! defined $resolved) {
                 push(@errors, CommandError->new('Failed to readlink', undef, $file));
             } elsif (-e $resolved) {
-                my $mode = (stat($resolved))[2];
+                my ($mode, $mtime) = (stat($resolved))[2,9];
                 my $type = $mode & main::S_IFMT;
 
                 if (main::S_ISREG($type)) {
-                    ++$i;
+                    my ($lmtime) = (lstat($file))[9];
+
+                    if ($lmtime == $mtime) {
+                        ++$i;
+                    } else {
+                        push(@errors, CommandError->new('mtime mismatch', $resolved, $file));
+                    }
                 } else {
                     push(@errors, CommandError->new('Invalid target file type', $resolved, $file));
                 }
@@ -678,14 +684,23 @@ sub run {
             if (! defined $resolved) {
                 push(@errors, CommandError->new('Failed to readlink', undef, $file));
             } elsif (-e $resolved) {
-                my $mode = (stat($resolved))[2];
+                my ($mode, $mtime) = (stat($resolved))[2,9];
                 my $type = $mode & main::S_IFMT;
 
                 if (! main::S_ISREG($type)) {
                     print STDOUT 'Removing symlink with invalid target file type: ', $file, "\n";
                     my $check = unlink($file);
                     if (! $check) {
-                        push(@errors, CommandError->new($!, undef, $file));
+                        push(@errors, CommandError->new($!, $resolved, $file));
+                    }
+                } else {
+                    my ($lmtime) = (lstat($file))[9];
+                    if ($mtime != $lmtime) {
+                        print STDOUT 'Correcting mtime of symlink: ', $file, "\n";
+                        my $check = $self->_setLinkTime($resolved, $file);
+                        if (! $check) {
+                            push(@errors, CommandError->new('Failed to update mtime', $resolved, $file));
+                        }
                     }
                 }
             } else {
